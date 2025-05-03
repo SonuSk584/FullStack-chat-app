@@ -21,7 +21,7 @@ export const SocketContextProvider = ({ children }) => {
 
   useEffect(() => {
     if (authUser) {
-      const newSocket = io("http://localhost:5001", {
+      const newSocket = io("http://localhost:5001" ||"https://fullstack-chat-app-4vsj.onrender.com", {
         query: {
           userId: authUser?._id,
           username: authUser?.fullName
