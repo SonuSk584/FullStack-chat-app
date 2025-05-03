@@ -18,10 +18,13 @@ export const SocketContextProvider = ({ children }) => {
   const { setIncomingCall, setActiveCall } = useCallStore();
   const [socket, setSocket] = useState(null);
   const [onlineUsers, setOnlineUsers] = useState([]);
+  const socketUrl = window.location.hostname === "localhost" 
+    ? "http://localhost:5001" 
+    : "https://fullstack-chat-app-4vsj.onrender.com";
 
   useEffect(() => {
     if (authUser) {
-      const newSocket = io("http://localhost:5001" ||"https://fullstack-chat-app-4vsj.onrender.com", {
+      const newSocket = io(socketUrl, {
         query: {
           userId: authUser?._id,
           username: authUser?.fullName
