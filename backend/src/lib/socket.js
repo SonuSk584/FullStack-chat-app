@@ -6,7 +6,7 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
-      origin: ["http://localhost:3000", "http://localhost:3001","https://fullstack-chat-app-3n26.onrender.com/"], // Add all possible origins
+      origin: ["http://localhost:3000", "http://localhost:3001","https://fullstack-chat-app-4vsj.onrender.com"], // Add all possible origins
       methods: ["GET", "POST"],
       credentials: true
     },

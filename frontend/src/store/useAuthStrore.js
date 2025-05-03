@@ -4,7 +4,7 @@ import toast from "react-hot-toast";
 import { io } from "socket.io-client";
 
 const BASE_URL = import.meta.env.PROD
-  ? "https://fullstack-chat-app-3n26.onrender.com"
+  ? "https://fullstack-chat-app-4vsj.onrender.com"
   : "http://localhost:5001";
 
 
