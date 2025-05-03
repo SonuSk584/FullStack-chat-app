@@ -87,23 +87,55 @@ export const useAuthStore = create((set, get) => ({
   },
 
   connectSocket: () => {
-    const { authUser } = get();
+    const { authUser,socket } = get();
     if (!authUser || get().socket?.connected) return;
 
-    const socket = io(BASE_URL, {
+    // const socket = io(BASE_URL, {
+    //   query: {
+    //     userId: authUser._id,
+    //   },
+    // });
+    if (!authUser || socket?.connected) return;
+    if (socket) {
+      socket.off(); 
+      socket.disconnect();
+      set({ socket: null });
+    }
+    const newSocket = io(BASE_URL, {
       query: {
         userId: authUser._id,
       },
+      reconnectionAttempts: 3,
+      timeout: 5000,
     });
-    socket.connect();
-    console.log("Socket connected with ID:", socket.id);
+    // socket.connect();
+      // Add error handling
+  newSocket.on("connect_error", (err) => {
+    console.error("Socket connection error:", err.message);
+  });
 
-    set({  socket });
+  newSocket.on("connect", () => {
+    console.log("✅ Socket connected with ID:", newSocket.id);
+  });
 
-    socket.on("getOnlineUsers", (userIds) => {
-      set({ onlineUsers: userIds });
-    });
-  },
+  // Match server event name
+  newSocket.on("onlineUsers", (userIds) => {
+    set({ onlineUsers: userIds });
+  });
+  newSocket.on("disconnect", (reason) => {
+    console.log("Socket disconnected:", reason);
+  });
+
+  set({ socket: newSocket });
+},
+  //   console.log("Socket connected with ID:", socket.id);
+
+  //   set({  socket });
+
+  //   socket.on("getOnlineUsers", (userIds) => {
+  //     set({ onlineUsers: userIds });
+  //   });
+  // },
   disconnectSocket: () => {
     if (get().socket?.connected) get().socket.disconnect();
   },
