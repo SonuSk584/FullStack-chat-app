@@ -5,13 +5,17 @@ import { BsMicFill, BsMicMuteFill, BsCameraVideoFill, BsCameraVideoOffFill, BsTe
 
 const VideoCall = ({ 
   isReceivingCall, 
+  isCallingUser,
   caller, 
+  targetUser,
   onAccept, 
-  onReject, 
+  onReject,
+  onCancel,
   onEndCall,
   isGroupCall,
   participants = [],
-  callType
+  callType,
+  connectionState = {}
 }) => {
   const [stream, setStream] = useState(null);
   const [isMuted, setIsMuted] = useState(false);
@@ -167,8 +171,8 @@ const VideoCall = ({
   };
 
   const toggleMute = () => {
-    if (stream) {
-      stream.getAudioTracks().forEach(track => {
+    if (localVideoRef.current?.srcObject) {
+      localVideoRef.current.srcObject.getAudioTracks().forEach(track => {
         track.enabled = !track.enabled;
       });
       setIsMuted(!isMuted);
@@ -176,8 +180,8 @@ const VideoCall = ({
   };
 
   const toggleVideo = () => {
-    if (stream && callType === 'video') {
-      stream.getVideoTracks().forEach(track => {
+    if (localVideoRef.current?.srcObject && callType === 'video') {
+      localVideoRef.current.srcObject.getVideoTracks().forEach(track => {
         track.enabled = !track.enabled;
       });
       setIsVideoOff(!isVideoOff);
@@ -198,6 +202,7 @@ const VideoCall = ({
 
   if (!showModal) return null;
 
+  // Render incoming call notification
   if (isReceivingCall) {
     return (
       <div className="fixed bottom-4 right-4 z-50">
@@ -238,6 +243,34 @@ const VideoCall = ({
     );
   }
 
+  // Render outgoing call interface
+  if (isCallingUser) {
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-lg p-6 w-96">
+          <div className="text-center">
+            <div className="w-24 h-24 rounded-full bg-blue-100 flex items-center justify-center mx-auto mb-4">
+              {callType === 'video' ? (
+                <BsCameraVideoFill size={36} className="text-blue-500" />
+              ) : (
+                <BsTelephone size={36} className="text-blue-500" />
+              )}
+            </div>
+            <h2 className="text-xl font-semibold mb-2">Calling {targetUser?.name}</h2>
+            <p className="text-gray-500 mb-6">Waiting for answer...</p>
+            <button
+              onClick={onCancel}
+              className="bg-red-500 text-white px-6 py-3 rounded-full hover:bg-red-600"
+            >
+              Cancel Call
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Render active call interface
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg p-6 w-full max-w-6xl h-[75vh]">
@@ -266,6 +299,7 @@ const VideoCall = ({
                   />
                   <span className="absolute bottom-2 left-2 text-white bg-black bg-opacity-50 px-2 py-1 rounded">
                     {participant.name}
+                    {connectionState[participant.id] && ` (${connectionState[participant.id]})`}
                   </span>
                 </div>
               ))}
@@ -278,7 +312,7 @@ const VideoCall = ({
                   <BsMicFill size={48} className="text-blue-500" />
                 </div>
                 <h3 className="text-2xl font-semibold">
-                  {participants.length > 0 ? participants[0].name : 'Connecting...'}
+                  {participants[0]?.name || 'Connecting...'}
                 </h3>
                 <p className="text-gray-500">Audio Call</p>
               </div>

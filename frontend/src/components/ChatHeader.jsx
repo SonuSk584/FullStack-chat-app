@@ -26,7 +26,7 @@ const ChatHeader = () => {
 
   const handleCall = (type) => {
     if (!isOnline) return;
-    initiateCall(selectedUser._id, false, type);
+    initiateCall(selectedUser._id, selectedUser.fullName, false, type);
   };
 
   return (
@@ -54,21 +54,21 @@ const ChatHeader = () => {
           <>
             <button
               onClick={() => handleCall('audio')}
-              className="btn btn-ghost btn-circle tooltip"
-              data-tip="Audio Call"
+              className="p-2 rounded-full hover:bg-gray-100 transition-colors duration-200"
+              title="Audio Call"
             >
               <BsTelephone size={20} className="text-blue-500" />
             </button>
             <button
               onClick={() => handleCall('video')}
-              className="btn btn-ghost btn-circle tooltip"
-              data-tip="Video Call"
+              className="p-2 rounded-full hover:bg-gray-100 transition-colors duration-200"
+              title="Video Call"
             >
               <BsCameraVideo size={20} className="text-blue-500" />
             </button>
           </>
         )}
-        <button className="btn btn-ghost btn-circle">
+        <button className="p-2 rounded-full hover:bg-gray-100 transition-colors duration-200">
           <BsThreeDotsVertical size={20} />
         </button>
       </div>

@@ -1,140 +1,272 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { useSocketContext } from './SocketContext';
 import { useAuth } from './AuthContext';
 import WebRTCService from '../services/webRTC';
 import VideoCall from '../components/VideoCall/VideoCall';
+import toast from 'react-hot-toast';
 
 const VideoCallContext = createContext();
 
 export const VideoCallProvider = ({ children }) => {
   const { socket } = useSocketContext();
   const { user } = useAuth();
-  const [webRTC, setWebRTC] = useState(null);
+  const webRTCRef = useRef(null);
   const [isInCall, setIsInCall] = useState(false);
   const [isReceivingCall, setIsReceivingCall] = useState(false);
+  const [isCallingUser, setIsCallingUser] = useState(false);
   const [caller, setCaller] = useState(null);
+  const [targetUser, setTargetUser] = useState(null);
   const [participants, setParticipants] = useState([]);
   const [isGroupCall, setIsGroupCall] = useState(false);
-  const [callType, setCallType] = useState(null); // 'audio' or 'video'
+  const [callType, setCallType] = useState(null);
+  const [connectionState, setConnectionState] = useState({});
 
+  const cleanup = useCallback(() => {
+    if (webRTCRef.current) {
+      webRTCRef.current.endAllCalls();
+      webRTCRef.current.stopLocalStream();
+    }
+    setIsInCall(false);
+    setIsReceivingCall(false);
+    setIsCallingUser(false);
+    setCaller(null);
+    setTargetUser(null);
+    setParticipants([]);
+    setIsGroupCall(false);
+    setCallType(null);
+    setConnectionState({});
+  }, []);
+
+  const handleIncomingCall = useCallback((data) => {
+    const { callerId, callerName, isGroup, type } = data;
+    if (!isInCall) {
+      setIsReceivingCall(true);
+      setCaller({ id: callerId, name: callerName });
+      setIsGroupCall(isGroup);
+      setCallType(type);
+      // Play ringtone
+      const audio = new Audio('/call-ringtone.mp3');
+      audio.loop = true;
+      audio.play().catch(console.error);
+    } else {
+      // Automatically reject if already in a call
+      socket?.emit('webrtc:reject-call', {
+        callerId,
+        reason: 'User is busy in another call'
+      });
+    }
+  }, [isInCall, socket]);
+
+  const handleCallAccepted = useCallback((data) => {
+    const { userId, userName } = data;
+    setIsCallingUser(false);
+    setParticipants(prev => [...prev, { id: userId, name: userName }]);
+    setIsInCall(true);
+    toast.success(`${userName} joined the call`);
+  }, []);
+
+  const handleCallRejected = useCallback((data) => {
+    const { userId, userName, reason } = data;
+    setIsCallingUser(false);
+    toast.error(reason || `Call rejected by ${userName}`);
+    cleanup();
+  }, [cleanup]);
+
+  const handleParticipantJoined = useCallback((data) => {
+    const { userId, userName } = data;
+    setParticipants(prev => [...prev, { id: userId, name: userName }]);
+    toast.success(`${userName} joined the call`);
+  }, []);
+
+  const handleParticipantLeft = useCallback((data) => {
+    const { userId } = data;
+    setParticipants(prev => {
+      const participant = prev.find(p => p.id === userId);
+      if (participant) {
+        toast.info(`${participant.name} left the call`);
+      }
+      return prev.filter(p => p.id !== userId);
+    });
+  }, []);
+
+  const handleWebRTCError = useCallback((error) => {
+    console.error('WebRTC error:', error);
+    toast.error(error.message || 'An error occurred with the call');
+    if (error.code === 'FATAL') {
+      cleanup();
+    }
+  }, [cleanup]);
+
+  const handleConnectionFailure = useCallback((data) => {
+    const { userId, reason } = data;
+    setParticipants(prev => {
+      const participant = prev.find(p => p.id === userId);
+      toast.error(`Connection failed with ${participant?.name || 'participant'}: ${reason}`);
+      return prev;
+    });
+    setConnectionState(prev => ({
+      ...prev,
+      [userId]: 'failed'
+    }));
+  }, []);
+
+  const handlePeerDisconnected = useCallback((data) => {
+    const { userId, reason } = data;
+    setParticipants(prev => {
+      const participant = prev.find(p => p.id === userId);
+      if (participant) {
+        toast.error(`${participant.name} disconnected: ${reason}`);
+      }
+      return prev.filter(p => p.id !== userId);
+    });
+  }, []);
+
+  // Initialize WebRTC service and set up event handlers
   useEffect(() => {
-    if (socket) {
-      const webRTCService = new WebRTCService(socket);
-      setWebRTC(webRTCService);
+    if (socket && !webRTCRef.current) {
+      webRTCRef.current = new WebRTCService(socket);
+      
+      // Set up connection state change handler
+      webRTCRef.current.setOnConnectionStateChange((userId, state) => {
+        setConnectionState(prev => ({
+          ...prev,
+          [userId]: state
+        }));
+      });
 
-      socket.on('webrtc:incoming-call', handleIncomingCall);
-      socket.on('webrtc:call-accepted', handleCallAccepted);
-      socket.on('webrtc:call-rejected', handleCallRejected);
-      socket.on('webrtc:participant-joined', handleParticipantJoined);
-      socket.on('webrtc:participant-left', handleParticipantLeft);
+      // Set up socket event listeners
+      const events = {
+        'webrtc:incoming-call': handleIncomingCall,
+        'webrtc:call-accepted': handleCallAccepted,
+        'webrtc:call-rejected': handleCallRejected,
+        'webrtc:participant-joined': handleParticipantJoined,
+        'webrtc:participant-left': handleParticipantLeft,
+        'webrtc:error': handleWebRTCError,
+        'webrtc:connection-failed': handleConnectionFailure,
+        'webrtc:peer-disconnected': handlePeerDisconnected
+      };
 
+      // Register all event listeners
+      Object.entries(events).forEach(([event, handler]) => {
+        socket.on(event, handler);
+      });
+
+      // Cleanup function
       return () => {
-        socket.off('webrtc:incoming-call', handleIncomingCall);
-        socket.off('webrtc:call-accepted', handleCallAccepted);
-        socket.off('webrtc:call-rejected', handleCallRejected);
-        socket.off('webrtc:participant-joined', handleParticipantJoined);
-        socket.off('webrtc:participant-left', handleParticipantLeft);
-        webRTCService.endAllCalls();
-        webRTCService.stopLocalStream();
+        // Unregister all event listeners
+        Object.entries(events).forEach(([event, handler]) => {
+          socket.off(event, handler);
+        });
+        cleanup();
+        webRTCRef.current = null;
       };
     }
-  }, [socket]);
+  }, [
+    socket,
+    handleIncomingCall,
+    handleCallAccepted,
+    handleCallRejected,
+    handleParticipantJoined,
+    handleParticipantLeft,
+    handleWebRTCError,
+    handleConnectionFailure,
+    handlePeerDisconnected,
+    cleanup
+  ]);
 
-  const handleIncomingCall = (data) => {
-    const { callerId, callerName, isGroup, type } = data;
-    setIsReceivingCall(true);
-    setCaller({ id: callerId, name: callerName });
-    setIsGroupCall(isGroup);
-    setCallType(type);
-  };
-
-  const handleCallAccepted = (data) => {
-    const { userId, userName } = data;
-    setParticipants(prev => [...prev, { id: userId, name: userName }]);
-  };
-
-  const handleCallRejected = (data) => {
-    const { userId } = data;
-    // Handle call rejection (show notification, etc.)
-  };
-
-  const handleParticipantJoined = (data) => {
-    const { userId, userName } = data;
-    setParticipants(prev => [...prev, { id: userId, name: userName }]);
-  };
-
-  const handleParticipantLeft = (data) => {
-    const { userId } = data;
-    setParticipants(prev => prev.filter(p => p.id !== userId));
-  };
-
-  const initiateCall = async (targetUserId, isGroup = false, type = 'video') => {
+  const initiateCall = useCallback(async (targetUserId, targetUserName, isGroup = false, type = 'video') => {
     try {
-      await webRTC.startLocalStream(type === 'video');
-      socket.emit('webrtc:initiate-call', {
+      if (isInCall || isCallingUser) {
+        toast.error('Already in a call');
+        return;
+      }
+      
+      await webRTCRef.current?.startLocalStream(type);
+      socket?.emit('webrtc:initiate-call', {
         targetUserId,
         isGroup,
         type,
       });
-      setIsInCall(true);
+      setIsCallingUser(true);
+      setTargetUser({ id: targetUserId, name: targetUserName });
       setIsGroupCall(isGroup);
       setCallType(type);
     } catch (error) {
       console.error('Error initiating call:', error);
+      toast.error('Failed to start call: ' + (error.message || 'Unknown error'));
+      cleanup();
     }
-  };
+  }, [isInCall, isCallingUser, socket, cleanup]);
 
-  const acceptCall = async () => {
+  const acceptCall = useCallback(async () => {
     try {
-      await webRTC.startLocalStream(callType === 'video');
-      socket.emit('webrtc:accept-call', {
-        callerId: caller.id,
+      if (isInCall) {
+        toast.error('Already in a call');
+        return;
+      }
+
+      await webRTCRef.current?.startLocalStream(callType);
+      socket?.emit('webrtc:accept-call', {
+        callerId: caller?.id,
       });
       setIsReceivingCall(false);
       setIsInCall(true);
       setParticipants(prev => [...prev, caller]);
     } catch (error) {
       console.error('Error accepting call:', error);
+      toast.error('Failed to accept call: ' + (error.message || 'Unknown error'));
+      cleanup();
     }
-  };
+  }, [isInCall, socket, caller, callType, cleanup]);
 
-  const rejectCall = () => {
-    socket.emit('webrtc:reject-call', {
-      callerId: caller.id,
+  const rejectCall = useCallback((reason = 'Call rejected') => {
+    socket?.emit('webrtc:reject-call', {
+      callerId: caller?.id,
+      reason
     });
-    setIsReceivingCall(false);
-    setCaller(null);
-    setCallType(null);
-  };
+    cleanup();
+  }, [socket, caller, cleanup]);
 
-  const endCall = () => {
-    webRTC.endAllCalls();
-    webRTC.stopLocalStream();
-    setIsInCall(false);
-    setParticipants([]);
-    setIsGroupCall(false);
-    setCallType(null);
-    socket.emit('webrtc:end-call');
-  };
+  const cancelCall = useCallback(() => {
+    if (isCallingUser && targetUser) {
+      socket?.emit('webrtc:cancel-call', {
+        targetUserId: targetUser.id
+      });
+      cleanup();
+    }
+  }, [isCallingUser, targetUser, socket, cleanup]);
 
-  const addParticipant = (userId) => {
+  const endCall = useCallback((reason = 'Call ended') => {
+    if (webRTCRef.current) {
+      webRTCRef.current.endAllCalls();
+      webRTCRef.current.stopLocalStream();
+    }
+    socket?.emit('webrtc:end-call', { reason });
+    cleanup();
+  }, [socket, cleanup]);
+
+  const addParticipant = useCallback((userId) => {
     if (isGroupCall && isInCall) {
-      socket.emit('webrtc:add-participant', {
+      socket?.emit('webrtc:add-participant', {
         targetUserId: userId,
       });
     }
-  };
+  }, [isGroupCall, isInCall, socket]);
 
   const value = {
     isInCall,
     isReceivingCall,
+    isCallingUser,
     caller,
+    targetUser,
     participants,
     isGroupCall,
     callType,
+    connectionState,
     initiateCall,
     acceptCall,
     rejectCall,
+    cancelCall,
     endCall,
     addParticipant,
   };
@@ -142,16 +274,20 @@ export const VideoCallProvider = ({ children }) => {
   return (
     <VideoCallContext.Provider value={value}>
       {children}
-      {(isInCall || isReceivingCall) && (
+      {(isInCall || isReceivingCall || isCallingUser) && (
         <VideoCall
           isReceivingCall={isReceivingCall}
+          isCallingUser={isCallingUser}
           caller={caller}
+          targetUser={targetUser}
           onAccept={acceptCall}
           onReject={rejectCall}
+          onCancel={cancelCall}
           onEndCall={endCall}
           isGroupCall={isGroupCall}
           participants={participants}
           callType={callType}
+          connectionState={connectionState}
         />
       )}
     </VideoCallContext.Provider>
