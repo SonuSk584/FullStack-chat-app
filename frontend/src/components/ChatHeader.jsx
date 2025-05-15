@@ -1,15 +1,13 @@
 import { BsTelephone, BsCameraVideo, BsThreeDotsVertical } from 'react-icons/bs';
-import useCallStore from '../store/useCallStore';
 import { useSocketContext } from '../context/SocketContext';
+import { useVideoCall } from '../context/VideoCallContext';
 import { useEffect } from 'react';
 import { useChatStore } from '../store/useChatStore';
 
 const ChatHeader = () => {
-  const { setActiveCall } = useCallStore();
   const { socket, onlineUsers } = useSocketContext();
   const { selectedUser } = useChatStore();
-  
-  // Debug online status
+  const { initiateCall } = useVideoCall();
   
   useEffect(() => {
     console.log("ChatHeader rendered with:", {
@@ -18,42 +16,17 @@ const ChatHeader = () => {
       hasSocket: !!socket
     });
   }, [selectedUser, onlineUsers, socket]);
+
   if (!selectedUser?._id) {
     console.warn("ChatHeader: selectedUser or selectedUser._id is undefined");
     return null;
   }
-  console.log("Selected user:", selectedUser?._id);
-  console.log("Online users:", onlineUsers);
-  
-  // Fix: Ensure proper comparison with online users array
+
   const isOnline = onlineUsers?.includes(selectedUser._id);
 
-  const handleStartCall = (callType) => {
-    if (!selectedUser?._id || !socket || !isOnline) {
-      console.log("Call prevented:", {
-        hasUser: Boolean(selectedUser?._id),
-        hasSocket: Boolean(socket),
-        isOnline
-      });
-      return;
-    }
-
-    console.log("Initiating call with:", selectedUser.fullName);
-
-    const callData = {
-      recipientId: selectedUser._id,
-      callType
-    };
-
-    socket.emit("startCall", callData);
-
-    setActiveCall({
-      recipientId: selectedUser._id,
-      recipientName: selectedUser.fullName,
-      recipientProfilePic: selectedUser.profilePic,
-      callType,
-      isOutgoing: true
-    });
+  const handleCall = (type) => {
+    if (!isOnline) return;
+    initiateCall(selectedUser._id, false, type);
   };
 
   return (
@@ -77,22 +50,24 @@ const ChatHeader = () => {
       </div>
 
       <div className="flex items-center gap-2">
-        <button 
-          onClick={() => handleStartCall('audio')} 
-          className="btn btn-ghost btn-circle"
-          disabled={!isOnline}
-          title={!isOnline ? "User is offline" : "Start audio call"}
-        >
-          <BsTelephone size={20} />
-        </button>
-        <button 
-          onClick={() => handleStartCall('video')} 
-          className="btn btn-ghost btn-circle"
-          disabled={!isOnline}
-          title={!isOnline ? "User is offline" : "Start video call"}
-        >
-          <BsCameraVideo size={20} />
-        </button>
+        {isOnline && (
+          <>
+            <button
+              onClick={() => handleCall('audio')}
+              className="btn btn-ghost btn-circle tooltip"
+              data-tip="Audio Call"
+            >
+              <BsTelephone size={20} className="text-blue-500" />
+            </button>
+            <button
+              onClick={() => handleCall('video')}
+              className="btn btn-ghost btn-circle tooltip"
+              data-tip="Video Call"
+            >
+              <BsCameraVideo size={20} className="text-blue-500" />
+            </button>
+          </>
+        )}
         <button className="btn btn-ghost btn-circle">
           <BsThreeDotsVertical size={20} />
         </button>
