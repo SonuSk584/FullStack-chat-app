@@ -74,6 +74,23 @@ io.on("connection", (socket) => {
     }
   });
 
+  // Handle call rejection
+  socket.on("reject-call", ({ to, from }) => {
+    console.log(`Call rejected by ${from} for ${to}`);
+    const receiverSocketId = onlineUsers.get(to);
+    const callerSocketId = onlineUsers.get(from);
+    
+    if (receiverSocketId) {
+      // Notify the person who was called that the call was rejected
+      socket.to(receiverSocketId).emit("call-rejected", { from });
+    }
+    
+    if (callerSocketId) {
+      // Notify the caller that their call was rejected
+      io.to(callerSocketId).emit("call-rejected", { from });
+    }
+  });
+
   // Handle call answer
   socket.on("answerCall", ({ to, answer, roomId }) => {
     const receiverSocketId = onlineUsers.get(to);
@@ -86,10 +103,17 @@ io.on("connection", (socket) => {
   });
 
   // Handle call end
-  socket.on("endCall", ({ to }) => {
+  socket.on("end-call", ({ to, from }) => {
+    console.log(`Call ended by ${from} for ${to}`);
     const receiverSocketId = onlineUsers.get(to);
+    const callerSocketId = onlineUsers.get(from);
+    
     if (receiverSocketId) {
-      socket.to(receiverSocketId).emit("callEnded");
+      socket.to(receiverSocketId).emit("call-ended", { from });
+    }
+    
+    if (callerSocketId) {
+      io.to(callerSocketId).emit("call-ended", { from });
     }
   });
 
